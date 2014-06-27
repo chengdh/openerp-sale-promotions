@@ -75,13 +75,30 @@ ACTION_TYPES = [
     ('cart_disc_fix', _('Fixed amount on Sub Total')),
     ('prod_x_get_y', _('Buy X get Y free'))
 ]
+def _get_apply_osv(context=None):
+  '''
+  根据传入的context 获取osv pool,原来的代码中,sale_promotion只能应用于sale.order
+  修改后,可以应用于pos.order,
+  使用方法,在调用apply_promotion时,在context中传入promotion_apply_osv 即可,不传入时,默认是sale.order
+  '''
+  if not context:
+    return "sale.order"
+  else:
+    return context.get("promotion_apply_osv","sale.order")
 
+def _get_apply_osv_line(context=None):
+  '''
+  获取明细的osv name
+  '''
+  return _get_apply_osv(context) + ".line"
+ 
 class PromotionsRules(osv.osv):
     "Promotion Rules"
     _name = "promos.rules"
     _description = __doc__
     _order = 'sequence'
-    
+
+   
     def count_coupon_use(self, cursor, user, ids, 
                           name, arg, context=None):
         '''
@@ -96,7 +113,8 @@ class PromotionsRules(osv.osv):
         @return: No. of of sale orders(not in cancelled state)
                 that are linked to a particular coupon
         '''
-        sales_obj = self.pool.get('sale.order')
+        osv_name = _get_apply_osv(context)
+        sales_obj = self.pool.get(osv_name)
         res = {}
         for promotion_rule in self.browse(cursor, user, ids, context):
             if promotion_rule.coupon_code:
@@ -186,7 +204,9 @@ class PromotionsRules(osv.osv):
         @param order: Browse record sent by calling func.
         @param context: Context(no direct use).
         """
-        sales_obj = self.pool.get('sale.order')
+
+        osv_name = self._get_apply_osv(cursor,user,context)
+        sales_obj = self.pool.get(osv_name)
         #Check if the customer is in the specified partner cats
         if promotion_rule.partner_categories:
             applicable_ids = [
@@ -312,7 +332,8 @@ class PromotionsRules(osv.osv):
                                                promotion_rule.id,
                                                order_id
                                                ))
-        order = self.pool.get('sale.order').browse(cursor, user,
+        osv_name = _get_apply_osv(context)
+        order = self.pool.get(osv_name).browse(cursor, user,
                                                    order_id, context)
         for action in promotion_rule.actions:
             try:
@@ -331,7 +352,8 @@ class PromotionsRules(osv.osv):
         @param order_id: ID of sale order
         @param context: Context(no direct use).
         """
-        order = self.pool.get('sale.order').browse(cursor, user,
+        osv_name = _get_apply_osv(context)
+        order = self.pool.get(osv_name).browse(cursor, user,
                                                    order_id, context=context)
         active_promos = self.search(cursor, user,
                                     [('active', '=', True)],
@@ -752,7 +774,8 @@ class PromotionsRulesActions(osv.osv):
         @param order: Sale order
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         #Delete all promotion lines
         order_line_ids = order_line_obj.search(cursor, user,
                                             [
@@ -785,7 +808,8 @@ class PromotionsRulesActions(osv.osv):
         @param order: sale order
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         for order_line in order.order_line:
             if order_line.product_id.code == eval(action.product_code):
                 return order_line_obj.write(cursor,
@@ -807,7 +831,9 @@ class PromotionsRulesActions(osv.osv):
         @param order: sale order
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         product_obj = self.pool.get('product.product')
         line_name = '%s on %s' % (action.promotion.name,
                                      eval(action.product_code))
@@ -842,7 +868,9 @@ class PromotionsRulesActions(osv.osv):
         @param order: sale order
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         return order_line_obj.create(cursor,
                                   user,
                                   {
@@ -867,7 +895,8 @@ class PromotionsRulesActions(osv.osv):
         @param order: sale order
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         if action.action_type == 'cart_disc_fix':
             return order_line_obj.create(cursor,
                                   user,
@@ -894,7 +923,8 @@ class PromotionsRulesActions(osv.osv):
         @param product_id: product to be given free
         @param context: Context(no direct use).
         """
-        order_line_obj = self.pool.get('sale.order.line')
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         product_obj = self.pool.get('product.product')
         product_y = product_obj.browse(cursor, user, product_id[0])
         return order_line_obj.create(cursor, user, {
@@ -924,7 +954,8 @@ class PromotionsRulesActions(osv.osv):
                 another. This might cause the function to get slow and 
                 hamper the coding standards.
         """
-        order_line_obj = self.pool.get('sale.order.line')
+        osv_name = _get_apply_osv_line(context)
+        order_line_obj = self.pool.get(osv_name)
         product_obj = self.pool.get('product.product')
         
         vals = prod_qty = {}
